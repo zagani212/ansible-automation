@@ -1,0 +1,13 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - eu-west-3
+keyed_groups:
+  - key: tags.Environment
+    prefix: env
+  - key: tags.Role
+    prefix: role
+hostnames:
+  - dns-name
+  - private-ip-address
+compose:
+  ansible_host: dns_name

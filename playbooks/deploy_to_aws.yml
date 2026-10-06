@@ -1,0 +1,7 @@
+---
+- name: Deploy to all dev servers (dynamic inventory)
+  hosts: env_dev
+  become: yes
+  roles:
+    - common
+    - webserver
