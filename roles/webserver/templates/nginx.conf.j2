@@ -1,0 +1,10 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen {{ nginx_port }};
+        server_name {{ server_name }};
+    }
+}

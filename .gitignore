@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Ansible
+*.retry
+*.swp
+*.swo
+*~
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# SSH Keys (CRITICAL)
+*.pem
+*.key
+id_rsa*
+id_dsa*
+
+# Secrets (we'll use vault, but just in case)
+.vault_pass
+vault_password
