@@ -12,7 +12,11 @@ metadata:
 
 ## Current Status
 
-**Progress: ~50% of Level 1 → Level 2**
+**Progress: Level 3 - Advanced AWX Complete ✓**
+
+**Last Session:** 2026-10-08 (Session 3 - Advanced AWX: Dynamic Inventory, RBAC, Workflows)
+
+**Current Level:** 3.0/23 (13% through full curriculum)
 
 ### Completed Milestones
 
@@ -52,12 +56,20 @@ metadata:
 ### Environment Setup
 
 **AWS:**
-- EC2 instance running: `ec2-13-38-83-237.eu-west-3.compute.amazonaws.com`
-- Instance ID: i-* (ubuntu 22.04 LTS, t2.micro)
+- EC2 instance running: `35.181.9.168` (ubuntu 22.04 LTS, t2.medium)
+- Instance ID: i-* (7.6GB RAM, 2 vCPU)
 - Tags applied: `Environment=dev`, `Role=webserver`
 - SSH key: `~/.ssh/my-key.pem`
 - SSH user: `ubuntu`
 - Region: `eu-west-3`
+
+**Kubernetes & AWX:**
+- k3s installed: v1.36.5+k3s1
+- AWX deployed via Operator in `awx` namespace
+- AWX URL: `http://35.181.9.168:32752`
+- AWX admin: `admin` / `AWXpassword123`
+- Database: PostgreSQL 15 (persistent)
+- Cache: Redis 7
 
 **Local Ansible Setup:**
 - Ansible 2.16.3
@@ -115,51 +127,194 @@ ansible-automation/
 
 ---
 
-## Next Steps (PRIORITY ORDER)
+## Session 2 Completed ✓
 
-### Session 2: Deep Dive into Ansible (Before AWX)
+### Accomplished in Session 2
 
-**1. Answer assessment questions** (see: interview_questions.md)
-   - Gauge readiness for AWX
-   - Identify knowledge gaps
+**Assessment Questions:** Answered all 4 questions correctly ✓
+- Demonstrated production-thinking (idempotency, secrets, scalability)
+- Ready for AWX
 
-**2. Advanced Ansible Topics** (if ready)
-   - Ansible Vault password files (avoid `--ask-vault-pass` in automation)
-   - Variables: precedence, fact caching
-   - Conditionals: `when:` statements, complex logic
-   - Loops: `loop`, `with_items`, etc.
-   - Error handling: `failed_when`, `changed_when`, `ignore_errors`
-   - Block execution
+**AWX Deployment:** Deployed on k3s (Kubernetes) ✓
+- k3s v1.36.5 installed on EC2
+- AWX Operator deployed successfully
+- AWX running with PostgreSQL + Redis
+- Admin user created
 
-**3. Real-World Scenario: Multi-tier Application Deployment**
-   - Create roles: `database`, `app_server`, `load_balancer`
-   - Create a workflow playbook that deploys all three
-   - Use variables for configuration across environments
-   - Implement rollback logic
+**AWX First Steps:** Created all core components ✓
+1. **Project** — Connected GitHub repo (zagani212/ansible-automation)
+2. **Credentials** — SSH key stored encrypted in AWX
+3. **Inventory** — Static inventory with EC2 instance (15.237.143.97)
+4. **Job Template** — `Deploy Webserver` configured
+5. **First Job Run** — Successfully executed `playbooks/deploy_to_aws.yml`
+   - Deployed Nginx to EC2
+   - Output: `ok=7 changed=4` (idempotent playbook)
+   - Verified with curl: Nginx responding
 
-**4. Git Integration**
-   - Move ansible-automation repo to real Git hosting (GitHub/GitLab)
-   - Set up SSH key authentication
-   - Practice branches and merges
+**Understanding Demonstrated:**
+- SSH keys stored securely (encrypted in AWX DB, not in repo)
+- Idempotency explained correctly (2nd run = `changed=0`)
+- RBAC awareness (users don't need SSH keys)
+- Audit trail importance (jobs logged)
 
-### Session 3: AWX Introduction
+---
 
-**Prerequisites:** Complete assessment questions with strong answers
+## Session 3 Completed ✓
 
-**Topics:**
-- What is AWX?
-- How AWX differs from Ansible CLI
-- AWX components: web UI, API, task execution, database
-- Projects vs Playbooks vs Job Templates vs Workflows
-- Organizations, Users, Teams, RBAC
-- Credentials management in AWX
+### Accomplished in Session 3
 
-**First AWX Task:**
-- Deploy AWX in a Kubernetes environment (Kind or k3s)
-- Create first Organization/User/Team
-- Connect Git project (your ansible-automation repo)
-- Create first Job Template
-- Execute a job
+**Phase 1: AWS Credentials & Dynamic Inventory** ✓
+- Created AWS credential in AWX
+- Built dynamic inventory discovering **4 EC2 instances** from AWS
+- Configured tag-based auto-grouping (`aws_env_dev`, `aws_role_webserver`)
+- Created job template targeting dynamic inventory
+- Successfully deployed to 4 instances via dynamic discovery
+
+**Phase 2: RBAC - Role-Based Access Control** ✓
+- Created organization: "Lab Operations"
+- Created team: "App Deployment Team" with Execute role
+- Created limited user: "deploy_user" / "DeployPass123"
+- Tested RBAC: limited user sees ONLY authorized template
+- Verified credentials remain secure (not visible to limited users)
+- Tested job launch by limited user - successful
+
+**Phase 3: Workflows** ✓
+- Created verification job template: `Verify Deployment`
+- Built workflow: Start → Deploy → Verify (sequential execution)
+- Added approval gate: Start → Deploy → Approval → Verify
+- Tested approval workflow:
+  - Deploy runs automatically
+  - Workflow pauses at approval
+  - Manual approval required to continue
+  - Verification runs after approval
+  - All steps completed successfully
+
+**Phase 4: Multi-Environment Deployment** ✓
+- Created staging AWS credential: "AWS Staging Credentials"
+- Created staging dynamic inventory: "AWS Staging Inventory"
+- Created "Deploy to Staging" job template
+- Built multi-environment workflow: Start → Deploy Lab → Approval → Deploy Staging → Verify
+- Tested workflow:
+  - Dev deployment runs automatically
+  - Approval required before staging
+  - Staging deployment runs after approval
+  - Verification runs after staging deployment
+  - Workflow completed successfully with all 5 steps
+
+### AWX Components Created (Session 3)
+
+**Organizations:**
+- Lab Operations (new)
+
+**Teams:**
+- App Deployment Team (Lab Operations org, Execute role on Deploy to AWS Lab Dynamic)
+
+**Users:**
+- deploy_user (normal user, assigned to App Deployment Team)
+
+**Credentials:**
+- AWS Lab Credentials (existing from Phase 1)
+- AWS Staging Credentials (new)
+
+**Inventories:**
+- AWS EC2 Lab Inventory (dynamic, eu-west-3, tag-based grouping)
+- AWS Staging Inventory (dynamic, eu-west-3, tag-based grouping)
+
+**Job Templates:**
+- Deploy to AWS Lab (Dynamic) (targets lab inventory)
+- Verify Deployment (verification/test job)
+- Deploy to Staging (targets staging inventory)
+
+**Workflows:**
+- Multi-Stage Deployment Workflow (Deploy → Approval → Verify)
+- Multi-Environment Deploy (Deploy Lab → Approval → Deploy Staging → Verify)
+
+### Skills Demonstrated (Session 3)
+
+✅ AWS credential management in AWX  
+✅ Dynamic inventory with tag-based grouping  
+✅ Organization and team creation  
+✅ RBAC implementation and testing  
+✅ Permission scoping (Execute role on specific templates)  
+✅ Workflow design with multi-step orchestration  
+✅ Approval gates for production safety  
+✅ Multi-environment deployment patterns  
+✅ Audit trail and approval tracking  
+✅ Limited user access and security validation  
+
+---
+
+## Current Environment After Session 3
+
+**AWS:**
+- 4 EC2 instances in eu-west-3
+- All tagged with Environment and Role tags
+- Nginx deployed to all instances
+
+**AWX:**
+- URL: `http://35.181.9.168:32752`
+- 1 Organization (Lab Operations)
+- 1 Team with limited permissions
+- 3 Users (admin, deploy_user, + default)
+- 4 AWS credentials configured
+- 2 Dynamic inventories with tag-based grouping
+- 3 Job templates
+- 2 Workflows with approval gates
+
+---
+
+## Next Steps (Session 4+)
+
+### Session 3: Advanced AWX (Credentials, RBAC, Workflows)
+
+**1. AWS Dynamic Inventory**
+   - Configure AWS credential (access key/secret)
+   - Create dynamic inventory that discovers EC2 by tags
+   - Auto-group instances by environment
+
+**2. Advanced Credentials**
+   - Multiple credential types (Machine, Vault, AWS, GitHub, etc.)
+   - Create GitHub token for private repos
+   - Credential scoping and permissions
+
+**3. RBAC (Role-Based Access Control)**
+   - Organizations, Teams, Users
+   - Permissions model: who can run what
+   - Create team with limited playbook access
+
+**4. Workflows**
+   - Multi-step deployments (database → app → verification)
+   - Approval gates (human approval before prod)
+   - Error handling in workflows
+
+### Session 4: Production Hardening
+
+**1. Execution Environments**
+   - Custom Python packages for playbooks
+   - Custom Ansible collections
+
+**2. Job Scheduling**
+   - Schedule jobs to run on intervals
+   - Recurring deployments
+
+**3. Approvals & Safety**
+   - Require approval before prod jobs
+   - Notification integration
+
+**4. Backup & Disaster Recovery**
+   - Backup AWX database
+   - Restore procedures
+
+### Session 5-7: Real-World Scenarios
+
+**Multi-environment deployment:**
+- Deploy app to dev/staging/prod via AWX
+- Different credentials per environment
+- Approval gates for production
+
+**Integration with CI/CD:**
+- Trigger AWX jobs from GitHub Actions
+- AWX API for automation
 
 ---
 
@@ -198,9 +353,16 @@ Before Session 2, answer these:
 
 ---
 
-## Tomorrow's Start
+## Session 3 Resume (Tomorrow)
 
-1. Read this file
-2. Read mentor_instructions.md to recall the training philosophy
-3. Answer the 4 interview questions (record your answers)
-4. Then: Proceed with Session 2 based on assessment results
+1. Read TRAINING_RESUME.md (this session's summary)
+2. Review this file (current status)
+3. Start with advanced AWX credentials
+4. Create AWS credential for dynamic inventory
+5. Build dynamic inventory that discovers EC2 by tags
+6. Test workflow with multiple playbooks
+
+**Production Mindset Check:**
+- "How would you handle secrets in a real production environment?"
+- "Show me the AWS credential configuration"
+- "Create a job that can only be run by approved users"
