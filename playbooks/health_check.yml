@@ -1,0 +1,62 @@
+---
+- name: Health Check - Ping all servers
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Ping all servers
+      ping:
+      register: ping_result
+
+    - name: Check connectivity
+      debug:
+        msg: "{{ inventory_hostname }} is reachable"
+      when: ping_result is succeeded
+
+    - name: Report unreachable hosts
+      debug:
+        msg: "WARNING: {{ inventory_hostname }} is unreachable"
+      when: ping_result is failed
+
+    - name: Get system uptime
+      shell: uptime
+      register: uptime_output
+      changed_when: false
+
+    - name: Display uptime
+      debug:
+        msg: "{{ inventory_hostname }} uptime: {{ uptime_output.stdout }}"
+
+    - name: Check disk usage
+      shell: df -h / | tail -1
+      register: disk_usage
+      changed_when: false
+
+    - name: Display disk usage
+      debug:
+        msg: "{{ inventory_hostname }} disk: {{ disk_usage.stdout }}"
+
+    - name: Check memory usage
+      shell: free -h | grep Mem
+      register: mem_usage
+      changed_when: false
+
+    - name: Display memory usage
+      debug:
+        msg: "{{ inventory_hostname }} memory: {{ mem_usage.stdout }}"
+
+    - name: Check running services
+      shell: systemctl is-active docker || echo "docker not running"
+      register: docker_status
+      changed_when: false
+
+    - name: Report docker status
+      debug:
+        msg: "{{ inventory_hostname }} docker status: {{ docker_status.stdout }}"
+
+- name: Health Check Summary
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Print summary
+      debug:
+        msg: "Health check completed for all servers"

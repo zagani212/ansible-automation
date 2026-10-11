@@ -1,0 +1,54 @@
+---
+- name: Maintenance Deployment - Weekend maintenance window
+  hosts: all
+  serial: 1
+  tasks:
+    - name: Start maintenance window
+      debug:
+        msg: "Starting maintenance on {{ inventory_hostname }}"
+
+    - name: Check if updates available
+      shell: apt list --upgradable 2>/dev/null | wc -l
+      register: updates_available
+      changed_when: false
+      tags: check_updates
+
+    - name: Report available updates
+      debug:
+        msg: "{{ inventory_hostname }}: {{ updates_available.stdout }} updates available"
+
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: inventory_hostname is defined
+
+    - name: Perform system updates (non-interactive)
+      apt:
+        upgrade: safe
+        autoclean: yes
+        autoremove: yes
+      when: inventory_hostname is defined
+      tags: apply_updates
+
+    - name: Check if reboot required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Notify reboot needed
+      debug:
+        msg: "{{ inventory_hostname }} requires reboot"
+      when: reboot_required.stat.exists
+
+    - name: End maintenance window
+      debug:
+        msg: "Maintenance completed on {{ inventory_hostname }}"
+
+- name: Maintenance Summary
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Print completion message
+      debug:
+        msg: "Maintenance deployment completed"
