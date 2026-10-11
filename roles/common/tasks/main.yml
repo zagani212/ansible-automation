@@ -13,3 +13,19 @@
   ansible.builtin.package:
     name: "{{ packages }}"
     state: present
+    
+- name: Verify custom packages
+  shell: python3 -m pip list | grep -E "boto3|kubernetes|requests"
+  register: packages
+
+- name: Show installed packages
+  debug:
+    msg: "{{ packages.stdout }}"
+
+- name: List Ansible collections
+  shell: ansible-galaxy collection list
+  register: collections
+
+- name: Show collections
+  debug:
+    msg: "{{ collections.stdout }}"
