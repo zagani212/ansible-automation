@@ -24,6 +24,7 @@
       when: inventory_hostname is defined
 
     - name: Perform system updates (non-interactive)
+      become: yes
       apt:
         upgrade: safe
         autoclean: yes
