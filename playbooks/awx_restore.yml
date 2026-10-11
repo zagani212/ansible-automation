@@ -1,0 +1,86 @@
+---
+- name: AWX Restore - Recover database from backup
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    restore_dir: "/tmp/awx_restore"
+    s3_bucket: "awx-bucket-backup-11-10-2026"
+    s3_region: "eu-west-3"
+    backup_file: ""
+  tasks:
+    - name: Create restore directory
+      file:
+        path: "{{ restore_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: List available backups in S3
+      shell: |
+        aws s3 ls s3://{{ s3_bucket }}/awx-backups/ --region {{ s3_region }} | awk '{print $4}' | sort -r
+      register: s3_backups
+      changed_when: false
+
+    - name: Display available backups
+      debug:
+        msg: |
+          Available backups (newest first):
+          {{ s3_backups.stdout }}
+
+    - name: Download latest backup from S3
+      shell: |
+        LATEST_BACKUP=$(aws s3 ls s3://{{ s3_bucket }}/awx-backups/ --region {{ s3_region }} | awk '{print $4}' | sort -r | head -1)
+        aws s3 cp s3://{{ s3_bucket }}/awx-backups/$LATEST_BACKUP {{ restore_dir }}/
+      register: download_result
+      changed_when: false
+      tags: s3_download
+
+    - name: Find downloaded backup file
+      shell: "ls -t {{ restore_dir }}/awx_backup_*.sql | head -1"
+      register: backup_file_path
+      changed_when: false
+
+    - name: Display backup file being restored
+      debug:
+        msg: "Restoring from: {{ backup_file_path.stdout }}"
+
+    - name: Set PostgreSQL pod name
+      set_fact:
+        postgres_pod_name: "awx-postgres-15-0"
+
+    - name: WARNING - Database restore will overwrite existing data
+      pause:
+        prompt: |
+
+          ⚠️  WARNING ⚠️
+          This will restore the AWX database from: {{ backup_file_path.stdout }}
+          All current data will be overwritten.
+
+          Continue with restore? (yes/no)
+      register: restore_confirm
+      tags: restore_confirm
+
+    - name: Restore database from backup
+      shell: |
+        kubectl exec -it {{ postgres_pod_name }} -n awx -- \
+        psql -U awx awx < {{ backup_file_path.stdout }}
+      when: restore_confirm.user_input | lower == 'yes'
+      register: restore_result
+      tags: restore_db
+
+    - name: Display restore status
+      debug:
+        msg: "Database restored successfully from {{ backup_file_path.stdout }}"
+      when: restore_confirm.user_input | lower == 'yes'
+
+    - name: Display restore cancelled
+      debug:
+        msg: "Restore cancelled by user"
+      when: restore_confirm.user_input | lower != 'yes'
+
+- name: AWX Restore Summary
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Log restore completion
+      debug:
+        msg: "AWX restore process completed"

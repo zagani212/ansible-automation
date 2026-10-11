@@ -1,0 +1,86 @@
+---
+- name: AWX Backup - Database dump and upload to S3
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    backup_dir: "/tmp/awx_backups"
+    s3_bucket: "awx-bucket-backup-11-10-2026"
+    s3_region: "eu-west-3"
+    backup_retention_days: 30
+  tasks:
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Set PostgreSQL pod name
+      set_fact:
+        postgres_pod_name: "awx-postgres-15-0"
+
+    - name: Display pod name
+      debug:
+        msg: "Using PostgreSQL pod: {{ postgres_pod_name }}"
+
+    - name: Create database backup
+      shell: |
+        kubectl exec -it {{ postgres_pod_name }} -n awx -- \
+        pg_dump -U awx awx > {{ backup_dir }}/awx_backup_{{ ansible_date_time.iso8601_basic_short }}.sql
+      register: backup_result
+      changed_when: false
+
+    - name: Verify backup file exists
+      stat:
+        path: "{{ backup_dir }}/awx_backup_*.sql"
+      register: backup_file
+
+    - name: Display backup file size
+      debug:
+        msg: "Backup created: {{ backup_file.stat.size | int / 1024 / 1024 }} MB"
+      when: backup_file.stat.exists
+
+    - name: Upload backup to S3
+      shell: |
+        aws s3 cp {{ backup_dir }}/awx_backup_*.sql \
+        s3://{{ s3_bucket }}/awx-backups/ \
+        --region {{ s3_region }}
+      environment:
+        AWS_DEFAULT_REGION: "{{ s3_region }}"
+      register: s3_upload
+      tags: s3_upload
+
+    - name: Display S3 upload result
+      debug:
+        msg: "Backup uploaded to S3"
+
+    - name: List backups in S3
+      shell: |
+        aws s3 ls s3://{{ s3_bucket }}/awx-backups/ --region {{ s3_region }} | tail -5
+      register: s3_list
+      tags: s3_list
+
+    - name: Show recent S3 backups
+      debug:
+        msg: "{{ s3_list.stdout_lines }}"
+
+    - name: Clean up local backup files older than retention period
+      shell: |
+        find {{ backup_dir }} -name "awx_backup_*.sql" -mtime +{{ backup_retention_days }} -delete
+      changed_when: false
+      tags: cleanup
+
+    - name: Display backup status
+      debug:
+        msg: |
+          Backup completed successfully
+          - Backup location: {{ backup_dir }}
+          - S3 bucket: s3://{{ s3_bucket }}/awx-backups/
+          - Retention policy: {{ backup_retention_days }} days
+
+- name: AWX Backup Summary
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Log backup completion
+      debug:
+        msg: "AWX backup and S3 upload completed at {{ ansible_date_time.iso8601 }}"
