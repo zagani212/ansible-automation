@@ -1,0 +1,23 @@
+# Ansible Collections for Execution Environment
+# These are Ansible plugins, modules, and roles for specific tools
+
+collections:
+  # AWS Cloud Platform
+  - name: amazon.aws
+    version: ">=8.0.0"
+
+  # Kubernetes orchestration
+  - name: kubernetes.core
+    version: ">=3.0.0"
+
+  # General POSIX operations (Linux/Unix)
+  - name: ansible.posix
+    version: ">=1.7.0"
+
+  # Networking and utilities (firewalls, DNS, etc)
+  - name: community.general
+    version: ">=7.0.0"
+
+  # Docker/container management
+  - name: community.docker
+    version: ">=3.0.0"

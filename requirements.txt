@@ -1,0 +1,33 @@
+# Python packages for Execution Environment
+# These extend the default AWX EE with additional functionality
+
+# AWS API interactions
+boto3==1.35.0
+botocore==1.35.0
+
+# HTTP requests and REST APIs
+requests==2.32.0
+
+# Kubernetes API interactions
+kubernetes==31.0.0
+
+# Environment variables management
+python-dotenv==1.0.0
+
+# YAML parsing (for complex configs)
+PyYAML==6.0.1
+
+# JSON handling
+jsonschema==4.20.0
+
+# Database drivers (optional - for future use)
+psycopg2-binary==2.9.9
+
+# Cryptography (for vault operations)
+cryptography==43.0.0
+
+# DNS operations (for dynamic discovery)
+dnspython==2.6.1
+
+# Templating enhancements
+jinja2==3.1.2
