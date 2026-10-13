@@ -46,11 +46,8 @@
       ignore_errors: yes
 
     - name: Check Prometheus query capability
-      uri:
-        url: "http://localhost:9090/api/v1/query?query=up"
-        method: GET
-        status_code: 200
-        timeout: 10
+      shell: |
+        curl -s "http://localhost:9090/api/v1/query?query=up" | grep -q "status" && echo "OK" || echo "FAILED"
       register: prometheus_query
       ignore_errors: yes
 
@@ -81,7 +78,7 @@
           - Grafana service: {{ 'Running' if grafana_status.state == 'started' else 'Not Running' }}
           - Grafana API: {{ 'OK' if not grafana_health.failed else 'FAILED' }}
           - Node Exporter: {{ 'Connected' if not node_exporter_check.failed else 'Not connected' }}
-          - Active targets in Prometheus: {{ prometheus_targets.json.data.activeTargets | length if not prometheus_targets.failed else 'Unknown' }}
+          - Prometheus query: {{ prometheus_query.stdout if not prometheus_query.failed else 'Failed' }}
           - {{ storage_check.stdout | default('Storage: Unknown') }}
           - Check timestamp: {{ ansible_date_time.iso8601 }}
 

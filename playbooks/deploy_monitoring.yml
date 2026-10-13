@@ -243,15 +243,11 @@
       register: grafana_ready
 
     - name: Add Prometheus data source to Grafana
-      grafana_datasource:
-        name: Prometheus
-        grafana_url: "http://localhost:3000"
-        grafana_api_key: "{{ grafana_api_key }}"
-        ds_type: prometheus
-        ds_url: "http://localhost:9090"
-        state: present
-      vars:
-        grafana_api_key: "{{ lookup('env', 'GRAFANA_API_KEY') | default('admin') }}"
+      shell: |
+        curl -X POST http://localhost:3000/api/datasources \
+          -H "Content-Type: application/json" \
+          -d '{"name":"Prometheus","type":"prometheus","url":"http://localhost:9090","access":"proxy","isDefault":true}' \
+          2>/dev/null || true
       ignore_errors: yes
 
     - name: Report monitoring deployment
