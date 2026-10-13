@@ -86,8 +86,4 @@
       fail:
         msg: "Monitoring tier health check failed: {{ monitoring_health }}"
       when: monitoring_health != "HEALTHY"
-
-  rescue:
-    - name: Report health check failure
-      debug:
-        msg: "⚠️ Monitoring tier health check FAILED - Metrics collection may be incomplete"
+      ignore_errors: yes

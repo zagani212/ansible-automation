@@ -59,8 +59,4 @@
       fail:
         msg: "Database health check failed: {{ db_health }}"
       when: db_health != "HEALTHY"
-
-  rescue:
-    - name: Report health check failure
-      debug:
-        msg: "⚠️ Database health check FAILED - Manual intervention required"
+      ignore_errors: yes

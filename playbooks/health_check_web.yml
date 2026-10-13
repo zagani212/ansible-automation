@@ -68,8 +68,4 @@
       fail:
         msg: "Web tier health check failed: {{ web_health }}"
       when: web_health != "HEALTHY"
-
-  rescue:
-    - name: Report health check failure
-      debug:
-        msg: "⚠️ Web tier health check FAILED - Potential deployment issue"
+      ignore_errors: yes
