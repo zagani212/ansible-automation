@@ -48,23 +48,34 @@
         sudo -u postgres psql appdb -c "GRANT ALL PRIVILEGES ON SCHEMA public TO {{ db_user }};"
       ignore_errors: yes
 
+    - name: Find PostgreSQL configuration directory
+      shell: sudo -u postgres psql -c "SHOW config_file;" 2>/dev/null | grep -v config_file | grep -v "^$" | awk '{print $1}' | head -1
+      register: pg_config_path
+      ignore_errors: yes
+
+    - name: Set PostgreSQL config path fact
+      set_fact:
+        pg_config_file: "{{ pg_config_path.stdout | default('/etc/postgresql/15/main/postgresql.conf') }}"
+        pg_hba_file: "{{ (pg_config_path.stdout | dirname) }}/pg_hba.conf"
+      when: pg_config_path.stdout is defined
+
     - name: Enable PostgreSQL remote connections
-      lineinfile:
-        path: /etc/postgresql/15/main/postgresql.conf
-        regexp: "^#?listen_addresses"
-        line: "listen_addresses = '*'"
-        backup: yes
-      become: yes
-      notify: Reload PostgreSQL
+      shell: |
+        CONFIG_FILE="{{ pg_config_file }}"
+        if grep -q "listen_addresses" "$CONFIG_FILE" 2>/dev/null; then
+          sudo sed -i "s/#*listen_addresses.*/listen_addresses = '*'/" "$CONFIG_FILE"
+        else
+          echo "listen_addresses = '*'" | sudo tee -a "$CONFIG_FILE"
+        fi
+      ignore_errors: yes
 
     - name: Add pg_hba.conf entry for application
-      lineinfile:
-        path: /etc/postgresql/15/main/pg_hba.conf
-        line: "host    appdb       {{ db_user }}     0.0.0.0/0     md5"
-        insertbefore: "^# IPv4"
-        backup: yes
-      become: yes
-      notify: Reload PostgreSQL
+      shell: |
+        HBA_FILE="{{ pg_hba_file }}"
+        if ! grep -q "appdb.*{{ db_user }}" "$HBA_FILE" 2>/dev/null; then
+          echo "host    appdb       {{ db_user }}     0.0.0.0/0     md5" | sudo tee -a "$HBA_FILE"
+        fi
+      ignore_errors: yes
 
     - name: Start backup logging
       file:
