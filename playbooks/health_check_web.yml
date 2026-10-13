@@ -1,6 +1,6 @@
 ---
 - name: Health Check - Web Tier
-  hosts: web_servers
+  hosts: all
   gather_facts: no
   vars:
     web_port: 8080

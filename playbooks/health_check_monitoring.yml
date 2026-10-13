@@ -1,6 +1,6 @@
 ---
 - name: Health Check - Monitoring Tier
-  hosts: monitoring_servers
+  hosts: all
   gather_facts: no
 
   tasks:

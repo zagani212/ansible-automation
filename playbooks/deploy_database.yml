@@ -1,6 +1,6 @@
 ---
 - name: Deploy Database Tier
-  hosts: db_servers
+  hosts: all
   gather_facts: yes
   vars:
     db_version: "15.0"

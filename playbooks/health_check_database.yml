@@ -1,6 +1,6 @@
 ---
 - name: Health Check - Database Tier
-  hosts: db_servers
+  hosts: all
   gather_facts: no
   vars:
     db_host: "{{ inventory_hostname }}"

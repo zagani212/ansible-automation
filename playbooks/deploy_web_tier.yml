@@ -1,6 +1,6 @@
 ---
 - name: Deploy Web Tier
-  hosts: web_servers
+  hosts: all
   gather_facts: yes
   serial: 1
   vars:

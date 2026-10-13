@@ -1,6 +1,6 @@
 ---
 - name: Deploy Monitoring Tier
-  hosts: monitoring_servers
+  hosts: all
   gather_facts: yes
   vars:
     prometheus_version: "2.45.0"
