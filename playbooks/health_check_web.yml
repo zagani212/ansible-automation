@@ -1,0 +1,75 @@
+---
+- name: Health Check - Web Tier
+  hosts: web_servers
+  gather_facts: no
+  vars:
+    web_port: 8080
+    health_endpoint: "/health"
+    response_timeout: 10
+
+  tasks:
+    - name: Check nginx service is running
+      systemd:
+        name: nginx
+        state: started
+      check_mode: yes
+      register: nginx_status
+
+    - name: Test application health endpoint
+      uri:
+        url: "http://localhost:{{ web_port }}{{ health_endpoint }}"
+        method: GET
+        status_code: 200
+        timeout: "{{ response_timeout }}"
+      register: health_check
+      ignore_errors: yes
+
+    - name: Check nginx connectivity
+      wait_for:
+        host: localhost
+        port: "{{ web_port }}"
+        timeout: 5
+      register: port_check
+      ignore_errors: yes
+
+    - name: Get nginx stats
+      shell: "echo 'stub_status;' | nc localhost {{ web_port }} 2>/dev/null | grep -i active || echo 'N/A'"
+      ignore_errors: yes
+      register: nginx_stats
+
+    - name: Check system resources on web server
+      shell: |
+        free -h | grep Mem | awk '{print "Memory: " $2 " total, " $7 " available"}'
+      register: memory_check
+      ignore_errors: yes
+
+    - name: Check disk space
+      shell: "df -h / | tail -1 | awk '{print \"Disk: \" $2 \" total, \" $4 \" available (\" $5 \" used)\"}'"
+      register: disk_check
+      ignore_errors: yes
+
+    - name: Determine web tier health status
+      set_fact:
+        web_health: "{% if health_check.failed %}DEGRADED{% elif health_check.status == 200 %}HEALTHY{% else %}UNKNOWN{% endif %}"
+
+    - name: Report web tier health
+      debug:
+        msg: |
+          Web Tier Health Check Results:
+          - Status: {{ web_health }}
+          - Nginx service: {{ 'Running' if nginx_status.state == 'started' else 'Not Running' }}
+          - Health endpoint: {{ 'Responding (200 OK)' if not health_check.failed else 'Not responding' }}
+          - Port {{ web_port }}: {{ 'Open' if not port_check.failed else 'Closed' }}
+          - {{ memory_check.stdout | default('Memory: Unknown') }}
+          - {{ disk_check.stdout | default('Disk: Unknown') }}
+          - Check timestamp: {{ ansible_date_time.iso8601 }}
+
+    - name: Fail if web tier unhealthy
+      fail:
+        msg: "Web tier health check failed: {{ web_health }}"
+      when: web_health != "HEALTHY"
+
+  rescue:
+    - name: Report health check failure
+      debug:
+        msg: "⚠️ Web tier health check FAILED - Potential deployment issue"

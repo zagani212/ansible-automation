@@ -1,0 +1,96 @@
+---
+- name: Health Check - Monitoring Tier
+  hosts: monitoring_servers
+  gather_facts: no
+
+  tasks:
+    - name: Check Prometheus service is running
+      systemd:
+        name: prometheus
+        state: started
+      check_mode: yes
+      register: prometheus_status
+
+    - name: Check Grafana service is running
+      systemd:
+        name: grafana-server
+        state: started
+      check_mode: yes
+      register: grafana_status
+
+    - name: Test Prometheus API health
+      uri:
+        url: "http://localhost:9090/-/healthy"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: prometheus_health
+      ignore_errors: yes
+
+    - name: Test Grafana API health
+      uri:
+        url: "http://localhost:3000/api/health"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: grafana_health
+      ignore_errors: yes
+
+    - name: Check Prometheus data collection
+      uri:
+        url: "http://localhost:9090/api/v1/targets"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: prometheus_targets
+      ignore_errors: yes
+
+    - name: Check Prometheus query capability
+      uri:
+        url: "http://localhost:9090/api/v1/query?query=up"
+        method: GET
+        status_code: 200
+        timeout: 10
+      register: prometheus_query
+      ignore_errors: yes
+
+    - name: Check Node Exporter connectivity
+      wait_for:
+        host: localhost
+        port: 9100
+        timeout: 5
+      register: node_exporter_check
+      ignore_errors: yes
+
+    - name: Check monitoring storage
+      shell: "df -h /opt/prometheus/data | tail -1 | awk '{print \"Prometheus storage: \" $2 \" total, \" $4 \" available \" $5 \" used\"}'"
+      register: storage_check
+      ignore_errors: yes
+
+    - name: Determine monitoring tier health
+      set_fact:
+        monitoring_health: "{% if prometheus_health.failed or grafana_health.failed %}DEGRADED{% elif prometheus_health.status == 200 and grafana_health.status == 200 %}HEALTHY{% else %}UNKNOWN{% endif %}"
+
+    - name: Report monitoring tier health
+      debug:
+        msg: |
+          Monitoring Tier Health Check Results:
+          - Status: {{ monitoring_health }}
+          - Prometheus service: {{ 'Running' if prometheus_status.state == 'started' else 'Not Running' }}
+          - Prometheus API: {{ 'OK' if not prometheus_health.failed else 'FAILED' }}
+          - Grafana service: {{ 'Running' if grafana_status.state == 'started' else 'Not Running' }}
+          - Grafana API: {{ 'OK' if not grafana_health.failed else 'FAILED' }}
+          - Node Exporter: {{ 'Connected' if not node_exporter_check.failed else 'Not connected' }}
+          - Active targets in Prometheus: {{ prometheus_targets.json.data.activeTargets | length if not prometheus_targets.failed else 'Unknown' }}
+          - {{ storage_check.stdout | default('Storage: Unknown') }}
+          - Check timestamp: {{ ansible_date_time.iso8601 }}
+
+    - name: Fail if monitoring tier unhealthy
+      fail:
+        msg: "Monitoring tier health check failed: {{ monitoring_health }}"
+      when: monitoring_health != "HEALTHY"
+
+  rescue:
+    - name: Report health check failure
+      debug:
+        msg: "⚠️ Monitoring tier health check FAILED - Metrics collection may be incomplete"

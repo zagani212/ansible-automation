@@ -1,0 +1,78 @@
+---
+- name: Health Check - Database Tier
+  hosts: db_servers
+  gather_facts: no
+  vars:
+    db_host: "{{ inventory_hostname }}"
+    db_port: 5432
+    db_name: "appdb"
+    db_user: "appuser"
+
+  tasks:
+    - name: Check PostgreSQL service is running
+      systemd:
+        name: postgresql
+        state: started
+      check_mode: yes
+      register: pg_status
+
+    - name: Test PostgreSQL connectivity
+      community.postgresql.postgresql_query:
+        db: "{{ db_name }}"
+        query: "SELECT 1;"
+        login_user: "{{ db_user }}"
+        login_password: "{{ lookup('env', 'DB_PASSWORD') | default('changeme') }}"
+      register: db_conn_test
+      ignore_errors: yes
+
+    - name: Check database size
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: "SELECT pg_database.datname, pg_size_pretty(pg_database_size(pg_database.datname)) FROM pg_database;"
+      become: yes
+      become_user: postgres
+      register: db_size
+      ignore_errors: yes
+
+    - name: Check active connections
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: "SELECT datname, count(*) FROM pg_stat_activity GROUP BY datname;"
+      become: yes
+      become_user: postgres
+      register: db_connections
+      ignore_errors: yes
+
+    - name: Check table integrity
+      community.postgresql.postgresql_query:
+        db: "{{ db_name }}"
+        query: "SELECT schemaname, tablename FROM pg_tables WHERE schemaname = 'public';"
+        login_user: "{{ db_user }}"
+        login_password: "{{ lookup('env', 'DB_PASSWORD') | default('changeme') }}"
+      register: db_tables
+      ignore_errors: yes
+
+    - name: Determine database health status
+      set_fact:
+        db_health: "{% if db_conn_test.failed %}DEGRADED{% elif db_conn_test.query_result[0] == 1 %}HEALTHY{% else %}UNKNOWN{% endif %}"
+
+    - name: Report database health
+      debug:
+        msg: |
+          Database Health Check Results:
+          - Status: {{ db_health }}
+          - Service: {{ 'Running' if pg_status.state == 'started' else 'Not Running' }}
+          - Connectivity: {{ 'OK' if not db_conn_test.failed else 'FAILED' }}
+          - Active connections: {{ db_connections.query_result | length if not db_connections.failed else 'Unknown' }}
+          - Tables in appdb: {{ db_tables.query_result | length if not db_tables.failed else 'Unknown' }}
+          - Check timestamp: {{ ansible_date_time.iso8601 }}
+
+    - name: Fail if database unhealthy
+      fail:
+        msg: "Database health check failed: {{ db_health }}"
+      when: db_health != "HEALTHY"
+
+  rescue:
+    - name: Report health check failure
+      debug:
+        msg: "⚠️ Database health check FAILED - Manual intervention required"

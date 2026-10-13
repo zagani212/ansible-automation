@@ -1,0 +1,116 @@
+---
+- name: Deploy Database Tier
+  hosts: db_servers
+  gather_facts: yes
+  vars:
+    db_version: "15.0"
+    db_user: "appuser"
+    backup_retention: 7
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+      become: yes
+      register: apt_update
+
+    - name: Install PostgreSQL server
+      apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+      become: yes
+
+    - name: Ensure PostgreSQL service is started
+      systemd:
+        name: postgresql
+        state: started
+        enabled: yes
+      become: yes
+
+    - name: Create application database user
+      community.postgresql.postgresql_user:
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+        role_attr_flags: CREATEDB,NOSUPERUSER
+      become: yes
+      become_user: postgres
+      vars:
+        db_password: "{{ lookup('env', 'DB_PASSWORD') | default('changeme') }}"
+
+    - name: Create application database
+      community.postgresql.postgresql_db:
+        name: appdb
+        owner: "{{ db_user }}"
+        state: present
+      become: yes
+      become_user: postgres
+
+    - name: Grant privileges on database
+      community.postgresql.postgresql_privs:
+        database: appdb
+        roles: "{{ db_user }}"
+        objs: ALL_IN_SCHEMA
+        privs: SELECT,INSERT,UPDATE,DELETE
+        schema: public
+      become: yes
+      become_user: postgres
+
+    - name: Enable PostgreSQL remote connections
+      lineinfile:
+        path: /etc/postgresql/15/main/postgresql.conf
+        regexp: "^#?listen_addresses"
+        line: "listen_addresses = '*'"
+        backup: yes
+      become: yes
+      notify: Reload PostgreSQL
+
+    - name: Add pg_hba.conf entry for application
+      lineinfile:
+        path: /etc/postgresql/15/main/pg_hba.conf
+        line: "host    appdb       {{ db_user }}     0.0.0.0/0     md5"
+        insertbefore: "^# IPv4"
+        backup: yes
+      become: yes
+      notify: Reload PostgreSQL
+
+    - name: Start backup logging
+      file:
+        path: /var/log/postgres_backup.log
+        state: touch
+        mode: '0644'
+      become: yes
+
+    - name: Verify database is healthy
+      community.postgresql.postgresql_query:
+        db: postgres
+        query: "SELECT version();"
+      become: yes
+      become_user: postgres
+      register: db_version_check
+
+    - name: Report database deployment status
+      debug:
+        msg: |
+          ✓ Database tier deployment complete
+          - PostgreSQL version: {{ db_version_check.query_result[0].version }}
+          - Database: appdb
+          - User: {{ db_user }}
+          - Connections enabled: remote (0.0.0.0/0)
+
+  handlers:
+    - name: Reload PostgreSQL
+      systemd:
+        name: postgresql
+        state: reloaded
+      become: yes
+
+  post_tasks:
+    - name: Create deployment marker
+      file:
+        path: /var/log/deployment_db_{{ ansible_date_time.date }}.marker
+        state: touch
+      become: yes

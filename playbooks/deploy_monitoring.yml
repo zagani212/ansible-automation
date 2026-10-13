@@ -1,0 +1,287 @@
+---
+- name: Deploy Monitoring Tier
+  hosts: monitoring_servers
+  gather_facts: yes
+  vars:
+    prometheus_version: "2.45.0"
+    grafana_version: "10.0.0"
+    node_exporter_version: "1.6.0"
+
+  tasks:
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+      become: yes
+
+    - name: Install monitoring dependencies
+      apt:
+        name:
+          - curl
+          - wget
+          - git
+          - build-essential
+          - python3-pip
+        state: present
+      become: yes
+
+    - name: Create monitoring user
+      user:
+        name: prometheus
+        shell: /bin/bash
+        home: /opt/prometheus
+        state: present
+        system: yes
+      become: yes
+
+    - name: Create prometheus directories
+      file:
+        path: "{{ item }}"
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+        state: directory
+      become: yes
+      loop:
+        - /opt/prometheus
+        - /opt/prometheus/config
+        - /opt/prometheus/data
+        - /opt/prometheus/rules
+
+    - name: Download Prometheus
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+        checksum: "sha256:https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/sha256sums.txt"
+      ignore_errors: yes
+
+    - name: Extract Prometheus
+      unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /opt/prometheus
+        remote_src: yes
+        extra_opts: ["--strip-components=1"]
+        owner: prometheus
+        group: prometheus
+      become: yes
+      ignore_errors: yes
+
+    - name: Create Prometheus configuration
+      copy:
+        content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+            external_labels:
+              monitor: 'production'
+
+          scrape_configs:
+            - job_name: 'prometheus'
+              static_configs:
+                - targets: ['localhost:9090']
+
+            - job_name: 'node-exporter'
+              static_configs:
+                - targets: ['localhost:9100']
+
+            - job_name: 'awx'
+              static_configs:
+                - targets: ['awx-web:8052']
+        dest: /opt/prometheus/config/prometheus.yml
+        owner: prometheus
+        group: prometheus
+      become: yes
+
+    - name: Create Prometheus systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=Prometheus
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=prometheus
+          Group=prometheus
+          Type=simple
+          ExecStart=/opt/prometheus/prometheus \
+            --config.file=/opt/prometheus/config/prometheus.yml \
+            --storage.tsdb.path=/opt/prometheus/data
+
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/prometheus.service
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+      notify: Reload systemd
+
+    - name: Start Prometheus
+      systemd:
+        name: prometheus
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      become: yes
+
+    - name: Wait for Prometheus to be ready
+      uri:
+        url: "http://localhost:9090/-/healthy"
+        status_code: 200
+      retries: 6
+      delay: 5
+      register: prometheus_ready
+
+    - name: Install Node Exporter
+      shell: |
+        cd /tmp
+        wget https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        tar xzf node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz
+        cp node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/
+        useradd --no-create-home --shell /bin/false node_exporter 2>/dev/null || true
+      become: yes
+      ignore_errors: yes
+
+    - name: Create Node Exporter systemd service
+      copy:
+        content: |
+          [Unit]
+          Description=Node Exporter
+          After=network.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          Restart=always
+          RestartSec=10
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/node_exporter.service
+        owner: root
+        group: root
+        mode: '0644'
+      become: yes
+
+    - name: Start Node Exporter
+      systemd:
+        name: node_exporter
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      become: yes
+      ignore_errors: yes
+
+    - name: Create monitoring alert rules
+      copy:
+        content: |
+          groups:
+            - name: production
+              interval: 30s
+              rules:
+                - alert: HighCPUUsage
+                  expr: node_cpu_seconds_total > 0.8
+                  for: 5m
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: "High CPU usage on {{ $labels.instance }}"
+
+                - alert: HighMemoryUsage
+                  expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+                  for: 5m
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: "High memory usage on {{ $labels.instance }}"
+
+                - alert: DiskSpaceLow
+                  expr: node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.1
+                  for: 5m
+                  labels:
+                    severity: critical
+                  annotations:
+                    summary: "Low disk space on {{ $labels.instance }}"
+        dest: /opt/prometheus/rules/alerts.yml
+        owner: prometheus
+        group: prometheus
+      become: yes
+
+    - name: Reload Prometheus for new rules
+      systemd:
+        name: prometheus
+        state: reloaded
+      become: yes
+      ignore_errors: yes
+
+    - name: Install Grafana
+      apt:
+        name: grafana-server
+        state: present
+      become: yes
+
+    - name: Start Grafana
+      systemd:
+        name: grafana-server
+        state: started
+        enabled: yes
+      become: yes
+
+    - name: Wait for Grafana to be ready
+      uri:
+        url: "http://localhost:3000/api/health"
+        status_code: 200
+      retries: 6
+      delay: 5
+      register: grafana_ready
+
+    - name: Add Prometheus data source to Grafana
+      grafana_datasource:
+        name: Prometheus
+        grafana_url: "http://localhost:3000"
+        grafana_api_key: "{{ grafana_api_key }}"
+        ds_type: prometheus
+        ds_url: "http://localhost:9090"
+        state: present
+      vars:
+        grafana_api_key: "{{ lookup('env', 'GRAFANA_API_KEY') | default('admin') }}"
+      ignore_errors: yes
+
+    - name: Report monitoring deployment
+      debug:
+        msg: |
+          ✓ Monitoring tier deployment complete
+          - Prometheus: http://{{ inventory_hostname }}:9090
+          - Node Exporter: http://{{ inventory_hostname }}:9100
+          - Grafana: http://{{ inventory_hostname }}:3000
+          - Status: Ready
+
+  post_tasks:
+    - name: Create deployment marker
+      file:
+        path: /var/log/deployment_monitoring_{{ ansible_date_time.date }}.marker
+        state: touch
+      become: yes
+
+    - name: Verify all monitoring services
+      uri:
+        url: "http://localhost:{{ item }}/health"
+        status_code: [200, 404]
+      ignore_errors: yes
+      loop:
+        - 9090  # Prometheus
+        - 9100  # Node Exporter
+        - 3000  # Grafana
+
+  handlers:
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+      become: yes

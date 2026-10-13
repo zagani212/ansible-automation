@@ -1,0 +1,199 @@
+---
+- name: Deploy Web Tier
+  hosts: web_servers
+  gather_facts: yes
+  serial: 1
+  vars:
+    app_version: "1.0"
+    web_port: "8080"
+    app_repo: "https://github.com/example/app.git"
+
+  pre_tasks:
+    - name: Wait for load balancer to mark server as offline
+      pause:
+        seconds: 5
+
+  tasks:
+    - name: Check if server is healthy before deploy
+      uri:
+        url: "http://localhost:{{ web_port }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      ignore_errors: yes
+      register: health_before
+
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: dist
+      become: yes
+      register: apt_update
+
+    - name: Install web server dependencies
+      apt:
+        name:
+          - nginx
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+      become: yes
+
+    - name: Create application user
+      user:
+        name: appuser
+        shell: /bin/bash
+        home: /home/appuser
+        state: present
+      become: yes
+
+    - name: Create application directory
+      file:
+        path: /opt/application
+        owner: appuser
+        group: appuser
+        mode: '0755'
+        state: directory
+      become: yes
+
+    - name: Clone or update application code
+      git:
+        repo: "{{ app_repo }}"
+        dest: /opt/application
+        version: "v{{ app_version }}"
+        force: yes
+      become: yes
+      become_user: appuser
+      ignore_errors: yes
+
+    - name: Install Python dependencies
+      pip:
+        requirements: /opt/application/requirements.txt
+        virtualenv: /opt/application/venv
+        state: present
+      become: yes
+      become_user: appuser
+      ignore_errors: yes
+
+    - name: Configure nginx reverse proxy
+      template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/sites-available/application
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      become: yes
+      notify: Reload nginx
+      vars:
+        backend_port: "{{ web_port }}"
+
+    - name: Enable nginx site
+      file:
+        src: /etc/nginx/sites-available/application
+        dest: /etc/nginx/sites-enabled/application
+        state: link
+      become: yes
+
+    - name: Disable default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      become: yes
+
+    - name: Test nginx configuration
+      shell: nginx -t
+      become: yes
+      register: nginx_test
+
+    - name: Start nginx service
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+      become: yes
+
+    - name: Wait for application to be ready
+      uri:
+        url: "http://localhost:{{ web_port }}/health"
+        method: GET
+        status_code: 200
+        timeout: 30
+      retries: 6
+      delay: 5
+      register: app_ready
+
+    - name: Report deployment success
+      debug:
+        msg: |
+          ✓ Web tier deployment complete on {{ inventory_hostname }}
+          - Application version: {{ app_version }}
+          - Web server: nginx
+          - Listen port: {{ web_port }}
+          - Health check: {{ app_ready.status | default('OK') }}
+
+  post_tasks:
+    - name: Create deployment marker
+      file:
+        path: /var/log/deployment_web_{{ ansible_date_time.date }}.marker
+        state: touch
+      become: yes
+
+    - name: Add server back to load balancer
+      pause:
+        seconds: 3
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+      become: yes
+
+  rescue:
+    - name: Rollback on failure
+      debug:
+        msg: "⚠️ Deployment failed on {{ inventory_hostname }}, rolling back..."
+
+    - name: Stop application
+      systemd:
+        name: nginx
+        state: stopped
+      become: yes
+      ignore_errors: yes
+
+    - name: Revert to previous application version
+      git:
+        repo: "{{ app_repo }}"
+        dest: /opt/application
+        version: "HEAD~1"
+        force: yes
+      become: yes
+      become_user: appuser
+      ignore_errors: yes
+
+    - name: Start service with previous version
+      systemd:
+        name: nginx
+        state: started
+      become: yes
+      ignore_errors: yes
+
+    - name: Verify rollback
+      uri:
+        url: "http://localhost:{{ web_port }}/health"
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: rollback_check
+      ignore_errors: yes
+
+    - name: Report rollback status
+      debug:
+        msg: |
+          Rollback completed. Health check: {{ rollback_check.status | default('FAILED') }}
+
+    - name: Fail the task
+      fail:
+        msg: "Web tier deployment failed on {{ inventory_hostname }}"
